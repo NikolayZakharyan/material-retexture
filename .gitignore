@@ -1,0 +1,26 @@
+# secrets — never commit
+.env
+UPLOAD_SETS.md
+
+# python / virtualenv
+.venv/
+__pycache__/
+*.py[cod]
+
+# OS / editor / local tool settings
+.DS_Store
+.vscode/
+.claude/
+
+# generated output
+/uploaded/
+assets/result_sets/
+
+# input images (code-only repo): ignore all media, keep the .py helpers
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.tif
+*.tiff
