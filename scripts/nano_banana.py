@@ -13,6 +13,8 @@ Usage:
     python3 scripts/nano_banana.py --texture leather_3.jpg
     python3 scripts/nano_banana.py -n 3                 # 3 random texture variants of one base
     python3 scripts/nano_banana.py --prompt "Make the sofa green velvet"
+    python3 scripts/nano_banana.py --generate "woman cotton handbag on a table, photorealistic"
+                                                        # invent a fresh 1024x1024 base, then retexture it
 
 Reads GEMINI_API_KEY (or GOOGLE_API_KEY) from the project-root .env file.
 """
@@ -23,6 +25,7 @@ import csv
 import io
 import os
 import random
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -40,6 +43,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OR_IMAGES_DIR = PROJECT_ROOT / "assets" / "or_images"
 TEXTURES_DIR = PROJECT_ROOT / "assets" / "textures"
 RESULTS_DIR = PROJECT_ROOT / "assets" / "result_sets"
+# saved bank of text-to-image prompts used by `-g N` to invent base images
+GEN_PROMPTS_FILE = PROJECT_ROOT / "assets" / "gen_prompts.txt"
 
 # Nano Banana 2 Lite == Gemini 3.1 Flash Lite Image
 MODEL_ID = os.getenv("NANO_BANANA_MODEL", "gemini-3.1-flash-lite-image")
@@ -48,6 +53,7 @@ CAPTION_MODEL = os.getenv("NANO_BANANA_CAPTION_MODEL", "gemini-3.1-flash-lite")
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_DIM = 1600  # longest edge sent to the API; keeps requests small & fast
+GEN_BASE_SIZE = 1024  # default square size for text-to-image generated bases
 
 PROMPT_TEMPLATE = (
     "You are given two images. The FIRST image is a product photo. The SECOND "
@@ -157,6 +163,67 @@ def load_image(path: Path, max_dim: int = MAX_DIM) -> Image.Image:
     return img
 
 
+def slugify(text: str, maxlen: int = 40) -> str:
+    """Turn a free-text prompt into a short, filename-safe slug."""
+    s = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return s[:maxlen].rstrip("_") or "image"
+
+
+def load_gen_prompts(path: Path = GEN_PROMPTS_FILE) -> list[str]:
+    """Read the saved base-image prompt bank (one prompt per line; blank lines
+    and ``#`` comments ignored)."""
+    if not path.exists():
+        sys.exit(f"Prompt bank not found: {path}")
+    prompts = [
+        line.strip() for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not prompts:
+        sys.exit(f"No prompts in {path}")
+    return prompts
+
+
+def pick_gen_prompts(count: int) -> list[str]:
+    """Pick *count* generation prompts from the bank. Samples without repeats
+    when possible; if *count* exceeds the bank size, cycles through with repeats."""
+    bank = load_gen_prompts()
+    if count <= len(bank):
+        return random.sample(bank, count)
+    picks = bank[:]                       # use each at least once
+    picks += random.choices(bank, k=count - len(bank))
+    random.shuffle(picks)
+    return picks
+
+
+def generate_base_image(client: genai.Client, prompt: str, model: str,
+                        size: int = GEN_BASE_SIZE) -> Image.Image:
+    """Invent a brand-new base product photo from a *text* prompt with Nano
+    Banana, returned as an RGB image of exactly ``size`` x ``size`` pixels.
+
+    Unlike :func:`generate` (which edits an existing photo), this is pure
+    text-to-image. We ask for a 1:1 / 1K image and, as a guarantee, fit the
+    model's output to an exact square so downstream sizing is deterministic."""
+    config = types.GenerateContentConfig(
+        image_config=types.ImageConfig(aspect_ratio="1:1", image_size="1K"),
+    )
+    response = client.models.generate_content(
+        model=model, contents=[prompt], config=config)
+
+    candidates = getattr(response, "candidates", None)
+    if not candidates:
+        feedback = getattr(response, "prompt_feedback", None)
+        raise RuntimeError(f"No candidates returned. prompt_feedback={feedback}")
+
+    for part in candidates[0].content.parts:
+        inline = getattr(part, "inline_data", None)
+        if inline and inline.data:
+            img = Image.open(io.BytesIO(inline.data)).convert("RGB")
+            if img.size != (size, size):
+                img = ImageOps.fit(img, (size, size), method=Image.LANCZOS)
+            return img
+    raise RuntimeError("The model returned no image for the base-generation prompt.")
+
+
 def texture_label(path: Path) -> str:
     """Human-ish description used inside the prompt, e.g. 'leather' from
     'leather_3.jpg'."""
@@ -244,7 +311,7 @@ def composite_over_original(original: Image.Image, result: Image.Image
 def save_result_set(run_dir: Path, images: list[tuple[bytes, str]], base: Path,
                     texture: Path, material: str, description: str, model: str,
                     when: datetime, composite: bool = True,
-                    debug_mask: bool = False) -> None:
+                    debug_mask: bool = False, gen_prompt: str | None = None) -> None:
     """Fill *run_dir* with the 4 deliverables: original, texture, RESULT.jpg, CSV.
 
     When *composite* is True (default), each RESULT keeps the model's output only
@@ -269,9 +336,11 @@ def save_result_set(run_dir: Path, images: list[tuple[bytes, str]], base: Path,
     with open(run_dir / "description.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["datetime", "original_image", "texture_image",
-                    "result_image", "material", "model", "description"])
+                    "result_image", "material", "model", "description",
+                    "gen_prompt"])
         w.writerow([when.strftime("%d/%m %H:%M:%S"), base.name, texture.name,
-                    "RESULT.jpg", material, model, description])
+                    "RESULT.jpg", material, model, description,
+                    gen_prompt or ""])
 
 
 def generate(client: genai.Client, prompt: str, base_img: Image.Image,
@@ -323,8 +392,12 @@ def describe_edit(client: genai.Client, base_img: Image.Image,
         return fallback
 
 
-def process_base(client: genai.Client, base_path: Path, args) -> list[Path]:
-    """Generate --count result folders for a single base image."""
+def process_base(client: genai.Client, base_path: Path, args,
+                 gen_prompt: str | None = None) -> list[Path]:
+    """Generate --count result folders for a single base image.
+
+    *gen_prompt* is the text-to-image prompt that invented this base (when it
+    came from ``-g``), recorded in each result's CSV; ``None`` for real photos."""
     base_img = load_image(base_path)
     print(f"Base:  {base_path.name}  ({base_img.width}x{base_img.height})")
 
@@ -353,7 +426,8 @@ def process_base(client: genai.Client, base_path: Path, args) -> list[Path]:
         run_dir = make_run_dir(base_path, when)
         save_result_set(run_dir, images, base_path, texture_path,
                         material, description, args.model, when,
-                        composite=not args.no_composite, debug_mask=args.debug_mask)
+                        composite=not args.no_composite, debug_mask=args.debug_mask,
+                        gen_prompt=gen_prompt)
         made.append(run_dir)
         print(f"saved {run_dir.name}/")
         if text:
@@ -369,6 +443,15 @@ def main() -> None:
     ap.add_argument("-i", "--images", type=int,
                     help="how many DIFFERENT random photos to process from "
                          "assets/or_images (default: 1). Use -n for variants per photo.")
+    ap.add_argument("-g", "--generate", type=int, metavar="N",
+                    help="invent N NEW base images with Nano Banana (using random "
+                         "prompts from assets/gen_prompts.txt) instead of using "
+                         "assets/or_images, then retexture them")
+    ap.add_argument("--gen-prompt", metavar="PROMPT",
+                    help="explicit text-to-image prompt for --generate (used for "
+                         "all N images; overrides the saved prompt bank)")
+    ap.add_argument("--gen-size", type=int, default=GEN_BASE_SIZE,
+                    help=f"square pixel size for --generate bases (default: {GEN_BASE_SIZE})")
     ap.add_argument("--texture", help="texture filename in assets/textures (default: random)")
     ap.add_argument("--prompt", help="override the instruction sent to the model")
     ap.add_argument("--model", default=MODEL_ID, help=f"model id (default: {MODEL_ID})")
@@ -389,7 +472,41 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    if args.all:
+    gen_prompt_map: dict[Path, str] = {}
+    if args.generate is not None:
+        if args.generate < 1:
+            sys.exit("-g/--generate needs a count of at least 1")
+        print(f"Model: {args.model}")
+        if args.gen_prompt:
+            prompts = [args.gen_prompt] * args.generate
+        else:
+            prompts = pick_gen_prompts(args.generate)
+
+        OR_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        bases = []
+        for j, gprompt in enumerate(prompts, start=1):
+            print(f"[gen {j}/{args.generate}] {gprompt!r} ...", flush=True)
+            gen_img = generate_base_image(client, gprompt, args.model, args.gen_size)
+            when0 = datetime.now()
+            stem = f"gen_{slugify(gprompt)}_{when0.strftime('%d-%m_%H-%M-%S')}"
+            gen_path = OR_IMAGES_DIR / f"{stem}.jpg"
+            k = 2
+            while gen_path.exists():  # two bases in the same second -> unique name
+                gen_path = OR_IMAGES_DIR / f"{stem}_{k}.jpg"
+                k += 1
+            gen_img.save(gen_path, "JPEG", quality=95)
+            print(f"  saved base: {gen_path.name}  ({gen_img.width}x{gen_img.height})")
+            bases.append(gen_path)
+            gen_prompt_map[gen_path] = gprompt
+
+        # Retexturing needs a material reference; if none exist, stop after
+        # producing the base(s) rather than crashing deeper in the pipeline.
+        if not args.texture and not list_images(TEXTURES_DIR):
+            print(f"\nNo textures in {TEXTURES_DIR.relative_to(PROJECT_ROOT)}/ — "
+                  "saved the generated base(s) only.\nAdd a material image there "
+                  "(then run process_images.py) to retexture them.")
+            return
+    elif args.all:
         bases = unique_bases(OR_IMAGES_DIR)
         if not bases:
             sys.exit(f"No images found in {OR_IMAGES_DIR}")
@@ -398,7 +515,8 @@ def main() -> None:
     else:
         bases = pick_bases(OR_IMAGES_DIR, args.images or 1)
 
-    print(f"Model: {args.model}")
+    if args.generate is None:
+        print(f"Model: {args.model}")
     if len(bases) > 1 or args.count > 1:
         print(f"Batch: {len(bases)} image(s) x {args.count} texture(s) each")
     print()
@@ -407,7 +525,8 @@ def main() -> None:
     for n, base_path in enumerate(bases, start=1):
         if len(bases) > 1:
             print(f"=== {n}/{len(bases)} ===")
-        made += process_base(client, base_path, args)
+        made += process_base(client, base_path, args,
+                             gen_prompt=gen_prompt_map.get(base_path))
         print()
 
     print(f"Done. {len(made)} result folder(s) in {RESULTS_DIR.relative_to(PROJECT_ROOT)}/")

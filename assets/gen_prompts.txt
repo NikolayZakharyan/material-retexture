@@ -1,0 +1,20 @@
+# Base-image generation prompts for `nano_banana.py -g N`.
+# One prompt per line. Blank lines and lines starting with '#' are ignored.
+# Each should describe ONE clear main product/item in a realistic scene, so the
+# retexture step has an obvious surface to re-skin. Add or edit freely.
+
+woman's cotton tote handbag sitting on a wooden cafe table, photorealistic, soft daylight
+a single leather armchair in a bright minimalist living room, photorealistic, natural light
+pair of canvas sneakers on a concrete studio floor, photorealistic, soft shadows
+a fabric sofa in a cozy scandinavian living room, photorealistic, morning light
+a backpack standing on a hardwood floor next to a window, photorealistic
+a denim jacket draped over a wooden chair, photorealistic, warm indoor light
+a duffel bag on a bench in a gym locker room, photorealistic
+an upholstered dining chair beside a set table, photorealistic, soft daylight
+a wallet resting on a marble countertop, photorealistic, studio lighting
+a pair of ankle boots on a rustic wooden step, photorealistic, natural light
+a laptop sleeve on a clean white desk, photorealistic, soft light
+a throw pillow on a neutral linen bed, photorealistic, morning light
+a crossbody purse hanging on a coat hook by a front door, photorealistic
+an office chair in a modern home workspace, photorealistic, daylight
+a weekender bag on the back seat of a car, photorealistic, afternoon light

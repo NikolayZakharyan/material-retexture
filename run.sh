@@ -4,6 +4,9 @@
 #
 #   ./run.sh --all              generate every photo in or_images, then upload as draft
 #   ./run.sh --images 3         3 random photos, then upload as draft
+#   ./run.sh -g 1               invent 1 NEW base image (random prompt from
+#                               assets/gen_prompts.txt), retexture it, then upload as draft
+#   ./run.sh -g 3               invent 3 new base images and retexture each
 #   ./run.sh --all --submit     upload AND finalize/submit (opt-in; off by default)
 #   ./run.sh --all --no-upload  generate only, skip Wirestock entirely
 #
