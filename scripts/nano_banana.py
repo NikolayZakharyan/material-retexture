@@ -28,6 +28,7 @@ import random
 import re
 import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from scipy import ndimage
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 # --- configuration ----------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +55,21 @@ CAPTION_MODEL = os.getenv("NANO_BANANA_CAPTION_MODEL", "gemini-3.1-flash-lite")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_DIM = 1600  # longest edge sent to the API; keeps requests small & fast
 GEN_BASE_SIZE = 1024  # default square size for text-to-image generated bases
+
+# Transient API failures (rate limits, model overload, gateway blips) that are
+# worth retrying rather than aborting the whole run over.
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+MAX_API_ATTEMPTS = int(os.getenv("NANO_BANANA_MAX_ATTEMPTS", "5"))
+
+# Appended to every prompt so nothing brand-identifying ends up in the output.
+# Stock platforms (Wirestock) reject visible logos, trademarks and legible text,
+# so we force plain, generic, unbranded products.
+NO_BRANDING_CLAUSE = (
+    "The product must be completely generic and unbranded: NO logos, brand "
+    "names, trademarks, monograms, emblems, badges, brand tags, labels, "
+    "printed text, lettering, numbers, slogans, barcodes, QR codes or "
+    "watermarks anywhere in the image. Leave every surface plain."
+)
 
 PROMPT_TEMPLATE = (
     "You are given two images. The FIRST image is a product photo. The SECOND "
@@ -85,7 +101,10 @@ PROMPT_TEMPLATE = (
     "form and following its original folds, seams, curves, lighting and shadows. "
     "The result must be indistinguishable from the original photograph in every "
     "area except the item's surface — as if only that one region had been "
-    "repainted and the rest of the file was left completely intact."
+    "repainted and the rest of the file was left completely intact.\n\n"
+    "The new material must be plain: do NOT add or invent any logos, brand "
+    "names, trademarks, monograms, emblems, badges, printed text, lettering, "
+    "numbers, labels or watermarks on the re-skinned surface."
 )
 # ---------------------------------------------------------------------------
 
@@ -195,6 +214,24 @@ def pick_gen_prompts(count: int) -> list[str]:
     return picks
 
 
+def call_with_retries(fn, what: str, attempts: int = MAX_API_ATTEMPTS):
+    """Run *fn* (a no-arg API call), retrying on transient server errors with
+    exponential backoff. Non-retryable errors (e.g. 400/permission) and the
+    final failed attempt are re-raised so the caller can handle/skip them."""
+    delay = 2.0
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except errors.APIError as e:
+            code = getattr(e, "code", None)
+            if code not in RETRYABLE_STATUS or attempt == attempts:
+                raise
+            print(f"    ({what}: {code} transient error, retry "
+                  f"{attempt}/{attempts - 1} in {delay:.0f}s)", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
+
+
 def generate_base_image(client: genai.Client, prompt: str, model: str,
                         size: int = GEN_BASE_SIZE) -> Image.Image:
     """Invent a brand-new base product photo from a *text* prompt with Nano
@@ -206,8 +243,11 @@ def generate_base_image(client: genai.Client, prompt: str, model: str,
     config = types.GenerateContentConfig(
         image_config=types.ImageConfig(aspect_ratio="1:1", image_size="1K"),
     )
-    response = client.models.generate_content(
-        model=model, contents=[prompt], config=config)
+    full_prompt = f"{prompt}\n\n{NO_BRANDING_CLAUSE}"
+    response = call_with_retries(
+        lambda: client.models.generate_content(
+            model=model, contents=[full_prompt], config=config),
+        what="base gen")
 
     candidates = getattr(response, "candidates", None)
     if not candidates:
@@ -346,10 +386,12 @@ def save_result_set(run_dir: Path, images: list[tuple[bytes, str]], base: Path,
 def generate(client: genai.Client, prompt: str, base_img: Image.Image,
              texture_img: Image.Image) -> tuple[list[tuple[bytes, str]], str]:
     """Call Nano Banana and return (list of (image_bytes, mime), any_text)."""
-    response = client.models.generate_content(
-        model=MODEL_ID,
-        contents=[prompt, base_img, texture_img],
-    )
+    response = call_with_retries(
+        lambda: client.models.generate_content(
+            model=MODEL_ID,
+            contents=[prompt, base_img, texture_img],
+        ),
+        what="retexture")
 
     candidates = getattr(response, "candidates", None)
     if not candidates:
@@ -486,7 +528,11 @@ def main() -> None:
         bases = []
         for j, gprompt in enumerate(prompts, start=1):
             print(f"[gen {j}/{args.generate}] {gprompt!r} ...", flush=True)
-            gen_img = generate_base_image(client, gprompt, args.model, args.gen_size)
+            try:
+                gen_img = generate_base_image(client, gprompt, args.model, args.gen_size)
+            except Exception as e:
+                print(f"  FAILED: {e}\n  skipping this base.")
+                continue
             when0 = datetime.now()
             stem = f"gen_{slugify(gprompt)}_{when0.strftime('%d-%m_%H-%M-%S')}"
             gen_path = OR_IMAGES_DIR / f"{stem}.jpg"
@@ -498,6 +544,9 @@ def main() -> None:
             print(f"  saved base: {gen_path.name}  ({gen_img.width}x{gen_img.height})")
             bases.append(gen_path)
             gen_prompt_map[gen_path] = gprompt
+
+        if not bases:
+            sys.exit("All base-image generations failed; nothing to retexture.")
 
         # Retexturing needs a material reference; if none exist, stop after
         # producing the base(s) rather than crashing deeper in the pipeline.

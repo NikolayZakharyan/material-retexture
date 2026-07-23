@@ -1,20 +1,61 @@
 # Base-image generation prompts for `nano_banana.py -g N`.
 # One prompt per line. Blank lines and lines starting with '#' are ignored.
 # Each should describe ONE clear main product/item in a realistic scene, so the
-# retexture step has an obvious surface to re-skin. Add or edit freely.
+# retexture step has an obvious surface to re-skin into leather or fabric.
+# Vary the item AND the scene/lighting so a batch doesn't look repetitive.
+# Add or edit freely.
 
-woman's cotton tote handbag sitting on a wooden cafe table, photorealistic, soft daylight
-a single leather armchair in a bright minimalist living room, photorealistic, natural light
-pair of canvas sneakers on a concrete studio floor, photorealistic, soft shadows
-a fabric sofa in a cozy scandinavian living room, photorealistic, morning light
-a backpack standing on a hardwood floor next to a window, photorealistic
-a denim jacket draped over a wooden chair, photorealistic, warm indoor light
-a duffel bag on a bench in a gym locker room, photorealistic
+# --- bags -------------------------------------------------------------------
+a woman's cotton tote handbag on a wooden cafe table, photorealistic, soft daylight
+a structured top-handle handbag on a boutique display shelf, photorealistic, studio lighting
+a slouchy hobo shoulder bag hanging on a bedroom door hook, photorealistic, natural light
+a compact crossbody purse on a marble console table, photorealistic, soft window light
+a bucket bag standing on a pale linen surface, photorealistic, bright studio light
+a small clutch on a satin surface, photorealistic, elegant studio lighting
+a men's briefcase resting on an office desk, photorealistic, warm afternoon light
+a messenger bag slung over a wooden chair, photorealistic, daylight
+a weekender duffel bag on the back seat of a car, photorealistic, afternoon light
+a travel backpack standing on a hardwood floor next to a window, photorealistic
+a gym duffel bag on a bench in a locker room, photorealistic, cool light
+
+# --- footwear ---------------------------------------------------------------
+a pair of low-top sneakers on a concrete studio floor, photorealistic, soft shadows
+a pair of high-top sneakers on a textured concrete plinth, photorealistic
+a pair of chelsea boots on a rustic wooden step, photorealistic, natural light
+a pair of ankle boots on a light grey pedestal, photorealistic, studio lighting
+a pair of loafers on a marble floor, photorealistic, soft daylight
+a pair of ballet flats on a pale wood surface, photorealistic, morning light
+a pair of derby dress shoes on a dark wood floor, photorealistic, warm light
+
+# --- furniture --------------------------------------------------------------
+a single armchair in a bright minimalist living room, photorealistic, natural light
+a mid-century accent chair by a large window, photorealistic, afternoon light
+a three-seat sofa in a cozy scandinavian living room, photorealistic, morning light
 an upholstered dining chair beside a set table, photorealistic, soft daylight
-a wallet resting on a marble countertop, photorealistic, studio lighting
-a pair of ankle boots on a rustic wooden step, photorealistic, natural light
+an ergonomic office chair in a modern home workspace, photorealistic, daylight
+a rounded ottoman footstool on a wool rug, photorealistic, warm light
+an upholstered bar stool at a kitchen island, photorealistic, soft daylight
+an upholstered headboard on a neatly made bed, photorealistic, morning light
+a padded bench at the foot of a bed, photorealistic, soft light
+a chaise lounge in a sunlit reading corner, photorealistic
+
+# --- garments & wearables ---------------------------------------------------
+a denim jacket draped over a wooden chair, photorealistic, warm indoor light
+a tailored blazer on a wooden hanger against a plain wall, photorealistic, studio light
+a bomber jacket laid flat on a concrete surface, photorealistic, soft light
+a pair of gloves resting on a marble countertop, photorealistic, soft light
+a wide belt coiled on a pale wood surface, photorealistic, studio lighting
+
+# --- small accessories ------------------------------------------------------
+a bifold wallet on a marble countertop, photorealistic, studio lighting
+a card holder on a wooden desk, photorealistic, warm light
 a laptop sleeve on a clean white desk, photorealistic, soft light
+a phone case standing against a neutral backdrop, photorealistic, studio lighting
+a passport holder on a wooden desk, photorealistic, warm light
+a watch with a plain band on a stone tray, photorealistic, macro studio light
+
+# --- home textiles ----------------------------------------------------------
 a throw pillow on a neutral linen bed, photorealistic, morning light
-a crossbody purse hanging on a coat hook by a front door, photorealistic
-an office chair in a modern home workspace, photorealistic, daylight
-a weekender bag on the back seat of a car, photorealistic, afternoon light
+a square cushion on a wooden bench, photorealistic, soft daylight
+a floor pouffe on a woven rug, photorealistic, warm light
+a folded blanket over the arm of a couch, photorealistic, soft window light
