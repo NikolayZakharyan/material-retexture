@@ -7,6 +7,9 @@
 #   ./run.sh -g 1               invent 1 NEW base image (random prompt from
 #                               assets/gen_prompts.txt), retexture it, then upload as draft
 #   ./run.sh -g 3               invent 3 new base images and retexture each
+#   ./run.sh -g 8 --clean       invent 8 "clean" bases (single product, plain
+#                               seamless background, soft light, minimal shadow)
+#                               that retexture cleanly, then upload as draft
 #   ./run.sh --all --submit     upload AND finalize/submit (opt-in; off by default)
 #   ./run.sh --all --no-upload  generate only, skip Wirestock entirely
 #

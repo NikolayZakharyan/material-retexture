@@ -1,0 +1,64 @@
+# Clean base-image prompts for `nano_banana.py -g N --clean`.
+# One prompt per line. Blank lines and lines starting with '#' are ignored.
+#
+# Unlike gen_prompts.txt, each line here names ONLY the product — NO scene, NO
+# setting, NO surface it sits on. The script's clean studio style adds a plain
+# seamless background, soft even lighting and a minimal shadow. Keeping the item
+# isolated and large in frame is what makes the retexture edit (and the
+# background mask) come out clean. Don't add scenes, lighting or "photorealistic"
+# here — that's appended automatically.
+
+# --- bags -------------------------------------------------------------------
+a woman's cotton tote handbag
+a structured top-handle handbag
+a slouchy hobo shoulder bag
+a compact crossbody purse
+a bucket bag
+a small clutch purse
+a men's briefcase
+a messenger bag
+a weekender duffel bag
+a travel backpack
+a gym duffel bag
+
+# --- footwear ---------------------------------------------------------------
+a pair of low-top sneakers
+a pair of high-top sneakers
+a pair of chelsea boots
+a pair of ankle boots
+a pair of loafers
+a pair of ballet flats
+a pair of derby dress shoes
+
+# --- furniture --------------------------------------------------------------
+a single armchair
+a mid-century accent chair
+a three-seat sofa
+an upholstered dining chair
+an ergonomic office chair
+a rounded ottoman footstool
+an upholstered bar stool
+an upholstered headboard
+a padded bench
+a chaise lounge
+
+# --- garments & wearables ---------------------------------------------------
+a denim jacket
+a tailored blazer
+a bomber jacket
+a pair of gloves
+a wide belt
+
+# --- small accessories ------------------------------------------------------
+a bifold wallet
+a card holder
+a laptop sleeve
+a phone case
+a passport holder
+a watch with a plain band
+
+# --- home textiles ----------------------------------------------------------
+a throw pillow
+a square cushion
+a floor pouffe
+a folded blanket

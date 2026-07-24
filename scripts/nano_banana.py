@@ -46,6 +46,9 @@ TEXTURES_DIR = PROJECT_ROOT / "assets" / "textures"
 RESULTS_DIR = PROJECT_ROOT / "assets" / "result_sets"
 # saved bank of text-to-image prompts used by `-g N` to invent base images
 GEN_PROMPTS_FILE = PROJECT_ROOT / "assets" / "gen_prompts.txt"
+# item-only prompt bank used by `-g N --clean`: each line is just the product
+# (no scene), and the clean studio style below supplies a plain background.
+GEN_PROMPTS_CLEAN_FILE = PROJECT_ROOT / "assets" / "gen_prompts_clean.txt"
 
 # Nano Banana 2 Lite == Gemini 3.1 Flash Lite Image
 MODEL_ID = os.getenv("NANO_BANANA_MODEL", "gemini-3.1-flash-lite-image")
@@ -239,10 +242,10 @@ def load_gen_prompts(path: Path = GEN_PROMPTS_FILE) -> list[str]:
     return prompts
 
 
-def pick_gen_prompts(count: int) -> list[str]:
-    """Pick *count* generation prompts from the bank. Samples without repeats
-    when possible; if *count* exceeds the bank size, cycles through with repeats."""
-    bank = load_gen_prompts()
+def pick_gen_prompts(count: int, path: Path = GEN_PROMPTS_FILE) -> list[str]:
+    """Pick *count* generation prompts from the bank at *path*. Samples without
+    repeats when possible; if *count* exceeds the bank size, cycles with repeats."""
+    bank = load_gen_prompts(path)
     if count <= len(bank):
         return random.sample(bank, count)
     picks = bank[:]                       # use each at least once
@@ -258,6 +261,40 @@ def random_style() -> str:
         f"Photorealistic product photograph, {random.choice(STYLE_ANGLES)}, "
         f"{random.choice(STYLE_COMPOSITIONS)}, {random.choice(STYLE_LIGHTING)}, "
         f"{random.choice(STYLE_MOODS)}."
+    )
+
+
+# "Clean" studio style used by `--clean`. Every option here keeps the product
+# large, centered, isolated on a seamless background, softly and evenly lit with
+# almost no shadow, and in sharp focus — the conditions that make the retexture
+# edit and the diff-based background mask (item_mask) work cleanly. It still
+# varies a little (angle, backdrop colour, light) so a batch isn't identical.
+CLEAN_ANGLES = [
+    "shot straight on at eye level",
+    "shot from a slightly elevated three-quarter angle",
+    "shot from a gentle high three-quarter angle",
+]
+CLEAN_BACKDROPS = [
+    "pure white", "soft light grey", "warm off-white", "pale neutral greige",
+]
+CLEAN_LIGHTING = [
+    "bright soft even high-key studio lighting",
+    "soft diffused frontal softbox lighting",
+    "gentle wraparound light from a large softbox",
+]
+
+
+def clean_style() -> str:
+    """A clean studio-style phrase: single product, large and centered, isolated
+    on a seamless plain backdrop, soft even light, minimal shadow, sharp focus."""
+    return (
+        f"Photorealistic studio product photograph, {random.choice(CLEAN_ANGLES)}, "
+        f"the single product centered and filling most of the frame, isolated on a "
+        f"smooth seamless {random.choice(CLEAN_BACKDROPS)} background with no other "
+        f"objects, props or clutter. {random.choice(CLEAN_LIGHTING)}, with only a "
+        f"soft faint contact shadow directly under the item and no long, hard or "
+        f"dark shadows. Sharp focus across the whole product, no background blur. "
+        f"Clean, uncluttered, neutral and evenly exposed."
     )
 
 
@@ -549,6 +586,11 @@ def main() -> None:
                          "all N images; overrides the saved prompt bank)")
     ap.add_argument("--gen-size", type=int, default=GEN_BASE_SIZE,
                     help=f"square pixel size for --generate bases (default: {GEN_BASE_SIZE})")
+    ap.add_argument("--clean", action="store_true",
+                    help="generate 'retexture-friendly' bases: a single product, "
+                         "large and centered, isolated on a plain seamless background "
+                         "with soft even light and minimal shadow (uses the item-only "
+                         "bank assets/gen_prompts_clean.txt). Recommended with -g.")
     ap.add_argument("--texture", help="texture filename in assets/textures (default: random)")
     ap.add_argument("--prompt", help="override the instruction sent to the model")
     ap.add_argument("--model", default=MODEL_ID, help=f"model id (default: {MODEL_ID})")
@@ -573,16 +615,18 @@ def main() -> None:
     if args.generate is not None:
         if args.generate < 1:
             sys.exit("-g/--generate needs a count of at least 1")
-        print(f"Model: {args.model}")
+        print(f"Model: {args.model}" + ("  (clean studio bases)" if args.clean else ""))
         if args.gen_prompt:
             prompts = [args.gen_prompt] * args.generate
+        elif args.clean:
+            prompts = pick_gen_prompts(args.generate, GEN_PROMPTS_CLEAN_FILE)
         else:
             prompts = pick_gen_prompts(args.generate)
 
         OR_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
         bases = []
         for j, gprompt in enumerate(prompts, start=1):
-            style = random_style()
+            style = clean_style() if args.clean else random_style()
             print(f"[gen {j}/{args.generate}] {gprompt!r}\n           style: {style}", flush=True)
             try:
                 gen_img = generate_base_image(client, gprompt, args.model,
