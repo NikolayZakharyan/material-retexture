@@ -61,6 +61,43 @@ GEN_BASE_SIZE = 1024  # default square size for text-to-image generated bases
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 MAX_API_ATTEMPTS = int(os.getenv("NANO_BANANA_MAX_ATTEMPTS", "5"))
 
+# Photographic-style pools. One option is drawn at random from each pool per
+# generated base and appended to the prompt, so a batch varies in angle,
+# framing, lighting and colour instead of all sharing the model's default look.
+STYLE_ANGLES = [
+    "shot at eye level",
+    "shot from a high three-quarter angle",
+    "top-down flat-lay seen from directly above",
+    "low-angle hero shot looking slightly upward",
+    "close-up macro detail shot",
+    "wide shot showing the item within its surroundings",
+    "shot straight on from the front",
+]
+STYLE_COMPOSITIONS = [
+    "the item centered in frame",
+    "the item placed off-center following the rule of thirds",
+    "tightly cropped so the item fills most of the frame",
+    "the item small within a spacious, airy scene",
+    "shallow depth of field with a softly blurred background",
+]
+STYLE_LIGHTING = [
+    "soft diffused daylight",
+    "warm golden-hour sunlight casting long shadows",
+    "bright hard sunlight with crisp defined shadows",
+    "cool, flat overcast light",
+    "dramatic single-source studio light with deep shadows",
+    "gentle backlight with a soft rim glow",
+    "moody low-key lighting",
+]
+STYLE_MOODS = [
+    "warm earthy colour palette",
+    "cool muted tones",
+    "bright airy pastel palette",
+    "moody, dark and contrasty palette",
+    "clean neutral palette",
+    "rich saturated colours",
+]
+
 # Appended to every prompt so nothing brand-identifying ends up in the output.
 # Stock platforms (Wirestock) reject visible logos, trademarks and legible text,
 # so we force plain, generic, unbranded products.
@@ -214,6 +251,16 @@ def pick_gen_prompts(count: int) -> list[str]:
     return picks
 
 
+def random_style() -> str:
+    """A random photographic-style phrase (angle, composition, lighting, mood)
+    appended to a base-generation prompt so each image in a batch looks distinct."""
+    return (
+        f"Photorealistic product photograph, {random.choice(STYLE_ANGLES)}, "
+        f"{random.choice(STYLE_COMPOSITIONS)}, {random.choice(STYLE_LIGHTING)}, "
+        f"{random.choice(STYLE_MOODS)}."
+    )
+
+
 def call_with_retries(fn, what: str, attempts: int = MAX_API_ATTEMPTS):
     """Run *fn* (a no-arg API call), retrying on transient server errors with
     exponential backoff. Non-retryable errors (e.g. 400/permission) and the
@@ -233,17 +280,25 @@ def call_with_retries(fn, what: str, attempts: int = MAX_API_ATTEMPTS):
 
 
 def generate_base_image(client: genai.Client, prompt: str, model: str,
-                        size: int = GEN_BASE_SIZE) -> Image.Image:
+                        size: int = GEN_BASE_SIZE,
+                        style: str | None = None) -> Image.Image:
     """Invent a brand-new base product photo from a *text* prompt with Nano
     Banana, returned as an RGB image of exactly ``size`` x ``size`` pixels.
 
     Unlike :func:`generate` (which edits an existing photo), this is pure
     text-to-image. We ask for a 1:1 / 1K image and, as a guarantee, fit the
-    model's output to an exact square so downstream sizing is deterministic."""
+    model's output to an exact square so downstream sizing is deterministic.
+
+    *style* is a random photographic-style phrase (see :func:`random_style`)
+    appended to the prompt; combined with a random seed and a raised temperature
+    it keeps the images in a batch from all looking alike."""
+    style = style if style is not None else random_style()
     config = types.GenerateContentConfig(
         image_config=types.ImageConfig(aspect_ratio="1:1", image_size="1K"),
+        temperature=1.3,
+        seed=random.randint(0, 2_147_483_647),
     )
-    full_prompt = f"{prompt}\n\n{NO_BRANDING_CLAUSE}"
+    full_prompt = f"{prompt}. {style}\n\n{NO_BRANDING_CLAUSE}"
     response = call_with_retries(
         lambda: client.models.generate_content(
             model=model, contents=[full_prompt], config=config),
@@ -527,9 +582,11 @@ def main() -> None:
         OR_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
         bases = []
         for j, gprompt in enumerate(prompts, start=1):
-            print(f"[gen {j}/{args.generate}] {gprompt!r} ...", flush=True)
+            style = random_style()
+            print(f"[gen {j}/{args.generate}] {gprompt!r}\n           style: {style}", flush=True)
             try:
-                gen_img = generate_base_image(client, gprompt, args.model, args.gen_size)
+                gen_img = generate_base_image(client, gprompt, args.model,
+                                              args.gen_size, style=style)
             except Exception as e:
                 print(f"  FAILED: {e}\n  skipping this base.")
                 continue
